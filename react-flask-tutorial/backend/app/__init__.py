@@ -13,7 +13,13 @@ def create_app(config_name='default'):
 
     # 初始化扩展
     db.init_app(app)
-    cors.init_app(app, resources={r"/api/*": {"origins": "http://localhost:3000"}})
+    # 1. 定义一个允许来源的列表
+    allowed_origins = [
+    "http://localhost:3000", # 用于本地开发
+    "https://react-flask-tutorial.vercel.app" ]
+
+# 2. 将列表传递给 origins 参数
+    cors.init_app(app, resources={r"/api/*": {"origins": allowed_origins}})
 
     # 注册 API 蓝图
     from .routes import api_bp
