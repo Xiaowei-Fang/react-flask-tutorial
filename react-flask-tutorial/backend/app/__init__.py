@@ -25,3 +25,9 @@ def create_app(config_name='default'):
     print("DEBUG: 'db' 命令注册完毕。") 
 
     return app
+
+origins = [
+    "http://localhost:3000",
+    "react-flask-tutorial.vercel.app" 
+]
+cors.init_app(app, resources={r"/api/*": {"origins": origins}})
