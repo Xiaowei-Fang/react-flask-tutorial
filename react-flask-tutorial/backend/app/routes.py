@@ -1,52 +1,79 @@
-# backend/app/routes.py
 from flask import Blueprint, jsonify, request
 from .services import ChartDataService
-from .models import MicrosoftRevenue
+from .models import User, Movie, db
+from flask_jwt_extended import create_access_token, jwt_required
 
-# 1. 创建蓝图对象
 api_bp = Blueprint('api', __name__)
-
-# 2. 实例化服务类
 chart_service = ChartDataService()
 
-# 3. 在蓝图上注册路由
-@api_bp.route('/ms/department-revenue', methods=['GET'])
-def get_department_revenue_data():
-    data = chart_service.get_revenue_by_department()
+# --- 认证路由 ---
+# ... (register 和 login 函数保持不变) ...
+@api_bp.route('/auth/register', methods=['POST'])
+def register():
+    data = request.get_json()
+    if not data or not data.get('username') or not data.get('password'):
+        return jsonify({"msg": "缺少用户名或密码"}), 400
+    username = data.get('username')
+    password = data.get('password')
+    if User.query.filter_by(username=username).first():
+        return jsonify({"msg": "用户名已存在"}), 409
+    new_user = User(username=username)
+    new_user.set_password(password)
+    db.session.add(new_user)
+    db.session.commit()
+    return jsonify({"msg": "用户注册成功"}), 201
+
+@api_bp.route('/auth/login', methods=['POST'])
+def login():
+    data = request.get_json()
+    if not data or not data.get('username') or not data.get('password'):
+        return jsonify({"msg": "缺少用户名或密码"}), 400
+    username = data.get('username')
+    password = data.get('password')
+    user = User.query.filter_by(username=username).first()
+    if user and user.check_password(password):
+        access_token = create_access_token(identity=username)
+        return jsonify(access_token=access_token)
+    return jsonify({"msg": "用户名或密码错误"}), 401
+
+
+# --- 电影数据路由 (请仔细核对这里的路径) ---
+@api_bp.route('/movies/count-by-country', methods=['GET'])
+@jwt_required()
+def get_movie_count_by_country_data():
+    data = chart_service.get_movie_count_by_country()
     if data:
         return jsonify(data)
     return jsonify({"error": "No data available"}), 404
 
-@api_bp.route('/ms/quarter-revenue', methods=['GET'])
-def get_quarter_revenue_data():
-    # 将默认值改为 'all'
-    quarter = request.args.get('quarter', default='all', type=str)
-    data = chart_service.get_revenue_by_quarter(quarter_filter=quarter)
+@api_bp.route('/movies/count-by-genre', methods=['GET'])
+@jwt_required()
+def get_movie_count_by_genre_data():
+    data = chart_service.get_movie_count_by_genre()
     if data:
         return jsonify(data)
-    return jsonify({"error": f"No data available for quarter {quarter}"}), 404
-
-@api_bp.route('/ms/all-data', methods=['GET'])
-def get_all_revenue_data():
-    """返回所有收入记录，用于表格展示"""
-    # 查询数据库中的所有记录
-    records = MicrosoftRevenue.query.order_by(MicrosoftRevenue.id.desc()).all()
+    return jsonify({"error": "No data available"}), 404
     
-    # 将 SQLAlchemy 对象列表转换为字典列表 (JSON可序列化)
-    data = [
-        {
-            "id": record.id,
-            "department": record.department,
-            "quarter": record.quarter,
-            "revenue": record.revenue
-        }
-        for record in records
-    ]
-    
-    return jsonify(data)
-
-@api_bp.route('/ms/available-quarters', methods=['GET'])
-def get_available_quarters_list():
-    """返回所有不重复的季度列表"""
-    quarters = chart_service.get_available_quarters()
-    return jsonify(quarters)
+@api_bp.route('/movies/all-data', methods=['GET'])
+@jwt_required()
+def get_all_movie_data():
+    try:
+        records = Movie.query.order_by(Movie.id).all()
+        # 如果没有记录，直接返回一个空列表，这是正常的
+        if not records:
+            return jsonify([])
+        
+        # 确保所有字段都能被正确处理
+        data = [
+            {
+                "id": r.id,
+                "title": r.title or "", # 如果 title 是 None，返回空字符串
+                "country": r.country or "N/A", # 如果 country 是 None，返回 'N/A'
+                "genre": r.genre or "N/A" # 如果 genre 是 None，返回 'N/A'
+            } 
+            for r in records
+        ]
+        return jsonify(data)
+    except Exception as e:
+        print(f"Error in get_all_movie_data: {e}")
+        return jsonify({"error": "Failed to retrieve data from server"}), 500
